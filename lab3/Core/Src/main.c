@@ -106,9 +106,10 @@ int main(void)
 
   // Запуск ЦАП
   HAL_DAC_Start(&hdac, DAC_CHANNEL_1); // Убедитесь, что используете правильный канал
+  float amplitude_scale = 0.6667; // Scaling factor to reduce amplitude
   for(int i = 0; i < SAMPLES; i++)
   {
-      sine_wave[i] = (sinf(2 * M_PI * i / SAMPLES) + 1) / 2; // Нормализуем от 0 до 1
+      sine_wave[i] = (sinf(2 * M_PI * i / SAMPLES) * amplitude_scale + 1) / 2;
   }
   /* USER CODE END 2 */
 
@@ -217,20 +218,12 @@ static void MX_DAC_Init(void)
   */
 static void MX_TIM6_Init(void)
 {
-
-  /* USER CODE BEGIN TIM6_Init 0 */
-
-  /* USER CODE END TIM6_Init 0 */
-
   TIM_MasterConfigTypeDef sMasterConfig = {0};
 
-  /* USER CODE BEGIN TIM6_Init 1 */
-
-  /* USER CODE END TIM6_Init 1 */
   htim6.Instance = TIM6;
-  htim6.Init.Prescaler = 0;
+  htim6.Init.Prescaler = 39;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 65535;
+  htim6.Init.Period = 999;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
@@ -242,10 +235,6 @@ static void MX_TIM6_Init(void)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN TIM6_Init 2 */
-
-  /* USER CODE END TIM6_Init 2 */
-
 }
 
 /**
