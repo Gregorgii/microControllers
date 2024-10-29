@@ -35,9 +35,10 @@ UART_HandleTypeDef huart2;
 /* USER CODE BEGIN PV */
 float amplitude_scale = 0.6667; // Начальное значение амплитуды
 float frequency = 1000;         // Начальная частота в Гц
+int buf_size = 16;
 
 uint8_t rx_byte;
-char rx_buffer[12];
+char rx_buffer[16];
 uint8_t rx_index = 0;
 /* USER CODE END PV */
 
@@ -82,7 +83,7 @@ int main(void)
   }
 
   // Начало приема данных по UART
-  HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
+  HAL_UART_Receive_IT(&huart2, &rx_byte, buf_size);
   /* USER CODE END 2 */
 
   while (1)
@@ -107,6 +108,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
         {
             rx_buffer[rx_index] = '\0';
             // Обработка полученного сообщения
+            HAL_UART_Transmit(&huart2, (uint8_t*)rx_buffer, strlen(rx_buffer), HAL_MAX_DELAY);
             ParseUARTMessage(rx_buffer);
             // Сброс индекса
             rx_index = 0;
@@ -152,6 +154,9 @@ void ParseUARTMessage(char* message)
         char error_message[] = "Invalid format. Use A=amp,F=freq\n";
         HAL_UART_Transmit(&huart2, (uint8_t*)error_message, strlen(error_message), HAL_MAX_DELAY);
     }
+    char debug_message[50];
+    sprintf(debug_message, "Amplitude set to: %.3f, Frequency set to: %.3f\r\n", amplitude_scale, frequency);
+    HAL_UART_Transmit(&huart2, (uint8_t*)debug_message, strlen(debug_message), HAL_MAX_DELAY);
 }
 
 // Функция обновления настроек таймера для изменения частоты
