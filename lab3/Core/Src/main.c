@@ -122,43 +122,73 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 // Функция разбора входящего сообщения
 void ParseUARTMessage(char* message)
 {
-    float new_amplitude_scale;
-    float new_frequency;
+    float new_amplitude_scale = 0.0f;
+    float new_frequency = 0.0f;
 
-    // Парсинг сообщения
-    if(sscanf(message, "A=%f,F=%f", &new_amplitude_scale, &new_frequency) == 2)
+    // Удаление символов переноса строки и возврата каретки из message
+    char *newline_pos = strchr(message, '\n');
+    if (newline_pos) *newline_pos = '\0';
+    newline_pos = strchr(message, '\r');
+    if (newline_pos) *newline_pos = '\0';
+
+    // Отладочный вывод очищенного сообщения
+    char clean_message[50];
+    sprintf(clean_message, "Cleaned message: %s\r\n", message);
+    HAL_UART_Transmit(&huart2, (uint8_t*)clean_message, strlen(clean_message), HAL_MAX_DELAY);
+
+    // Поиск подстрок "A=" и "F=" в сообщении
+    char *amp_str = strstr(message, "A=");
+    char *freq_str = strstr(message, "F=");
+
+    // Проверка, что обе подстроки найдены
+    if (amp_str != NULL && freq_str != NULL)
     {
-        // Обновление амплитуды и частоты
-        amplitude_scale = new_amplitude_scale;
-        frequency = new_frequency;
+        // Парсинг амплитуды и частоты
+        new_amplitude_scale = atof(amp_str + 2); // +2 для пропуска "A="
+        new_frequency = atof(freq_str + 2);      // +2 для пропуска "F="
 
-        // Обновление массива sine_wave
-        __disable_irq(); // Отключение прерываний
-        for(int i = 0; i < SAMPLES; i++)
+        // Проверка корректности значений
+        if (new_amplitude_scale > 0 && new_frequency > 0)
         {
-            sine_wave[i] = (sinf(2 * M_PI * i / SAMPLES) * amplitude_scale + 1) / 2;
+            // Обновление амплитуды и частоты
+            amplitude_scale = new_amplitude_scale;
+            frequency = new_frequency;
+
+            // Обновление массива sine_wave
+            __disable_irq(); // Отключение прерываний
+            for(int i = 0; i < SAMPLES; i++)
+            {
+                sine_wave[i] = (sinf(2 * M_PI * i / SAMPLES) * amplitude_scale + 1) / 2;
+            }
+            __enable_irq(); // Включение прерываний
+
+            // Обновление настроек таймера
+            UpdateTimerFrequency();
+
+            // Отправка подтверждения по UART
+            char ack_message[50];
+            sprintf(ack_message, "Amplitude: %.3f, Frequency: %.3f Hz\r\n", amplitude_scale, frequency);
+            HAL_UART_Transmit(&huart2, (uint8_t*)ack_message, strlen(ack_message), HAL_MAX_DELAY);
         }
-        __enable_irq(); // Включение прерываний
-
-        // Обновление настроек таймера
-        UpdateTimerFrequency();
-
-        // Отправка подтверждения по UART
-        char ack_message[50];
-        sprintf(ack_message, "Amplitude: %.3f, Frequency: %.3f Hz\r\n", amplitude_scale, frequency);
-        HAL_UART_Transmit(&huart2, (uint8_t*)ack_message, strlen(ack_message), HAL_MAX_DELAY);
+        else
+        {
+            // Ошибка: неподходящие значения амплитуды или частоты
+            char error_message[] = "Error: Amplitude and Frequency must be > 0\n";
+            HAL_UART_Transmit(&huart2, (uint8_t*)error_message, strlen(error_message), HAL_MAX_DELAY);
+        }
     }
     else
     {
-        // Сообщение об ошибке парсинга
+        // Ошибка парсинга: формат сообщения неверен
         char error_message[] = "Invalid format. Use A=amp,F=freq\n";
         HAL_UART_Transmit(&huart2, (uint8_t*)error_message, strlen(error_message), HAL_MAX_DELAY);
     }
+
+    // Отладочная печать
     char debug_message[50];
     sprintf(debug_message, "Amplitude set to: %.3f, Frequency set to: %.3f\r\n", amplitude_scale, frequency);
     HAL_UART_Transmit(&huart2, (uint8_t*)debug_message, strlen(debug_message), HAL_MAX_DELAY);
 }
-
 // Функция обновления настроек таймера для изменения частоты
 void UpdateTimerFrequency()
 {
