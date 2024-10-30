@@ -1,0 +1,10 @@
+../Core/Src/main.c:82:5:main	1
+../Core/Src/main.c:127:6:SystemClock_Config	3
+../Core/Src/main.c:169:13:MX_USART2_UART_Init	2
+../Core/Src/main.c:202:13:MX_GPIO_Init	1
+../Core/Src/main.c:233:6:HAL_UART_RxCpltCallback	9
+../Core/Src/main.c:285:6:Set_All_LEDs	3
+../Core/Src/main.c:297:6:Set_LEDs	3
+../Core/Src/main.c:310:6:Send_LED_Status	2
+../Core/Src/main.c:327:6:Send_Response	1
+../Core/Src/main.c:342:6:Error_Handler	1

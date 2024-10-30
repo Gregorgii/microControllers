@@ -1,0 +1,4 @@
+../Core/Src/main.c:35:5:main	16	static
+../Core/Src/main.c:79:6:SystemClock_Config	4	static
+../Core/Src/main.c:89:13:MX_GPIO_Init	48	static
+../Core/Src/main.c:128:6:update_leds	16	static
