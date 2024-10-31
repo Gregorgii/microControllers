@@ -4,28 +4,27 @@
   * @file           : main.c
   * @brief          : Main program body
   ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2024 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
   */
-/* USER CODE END Header */
-/* Includes ------------------------------------------------------------------*/
+ /* USER CODE END Header */
+ /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include <math.h>
 #include <string.h>
-#include <stdio.h>
+#include <stdlib.h>
 
 /* Private define ------------------------------------------------------------*/
-#define SAMPLES 100 // Количество точек на период
+#define SAMPLES 100         // Number of points for sine wave
 #define M_PI 3.14159265358979323846
+#define MAX_FREQ 1000.0f    // Maximum frequency allowed
+#define TIMER_FREQUENCY 2000.0f  // Timer interrupt frequency in Hz
+#define UART_BUFFER_SIZE 10
+
+/* USER CODE BEGIN PD */
 float sine_wave[SAMPLES];
+volatile float freq = 2.0f;          // Frequency of sine wave in Hz
+volatile float m = 0.6667f;
+volatile float amp = 1.0f;// Amplitude of sine wave (maximum 1.0)
+/* USER CODE END PD */
 
 /* Private variables ---------------------------------------------------------*/
 DAC_HandleTypeDef hdac;
@@ -33,13 +32,13 @@ TIM_HandleTypeDef htim6;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-float amplitude_scale = 0.6667; // Начальное значение амплитуды
-float frequency = 1000;         // Начальная частота в Гц
-int buf_size = 16;
+volatile float phase = 0.0f;
+volatile float phase_increment = 0.0f;
 
-uint8_t rx_byte;
-char rx_buffer[16];
-uint8_t rx_index = 0;
+uint8_t uart_rx_buffer[UART_BUFFER_SIZE];
+uint8_t uart_rx_data;
+uint8_t uart_rx_index = 0;
+volatile uint8_t command_ready = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -48,212 +47,160 @@ static void MX_GPIO_Init(void);
 static void MX_DAC_Init(void);
 static void MX_TIM6_Init(void);
 static void MX_USART2_UART_Init(void);
+void Process_UART_Command(char* command);
 
-/* USER CODE BEGIN PFP */
-void ParseUARTMessage(char* message);
-void UpdateTimerFrequency(void);
-/* USER CODE END PFP */
-
-/* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-static uint32_t sample_index = 0;
 /* USER CODE END 0 */
 
 int main(void)
 {
-  /* MCU Configuration--------------------------------------------------------*/
-  HAL_Init();
-  SystemClock_Config();
-  MX_GPIO_Init();
-  MX_DAC_Init();
-  MX_TIM6_Init();
-  MX_USART2_UART_Init();
+    /* HAL Initialization and system clock setup */
+    HAL_Init();
+    SystemClock_Config();
 
-  /* USER CODE BEGIN 2 */
-  // Запуск таймера в режиме прерываний
-  HAL_TIM_Base_Start_IT(&htim6);
+    /* Initialize peripherals */
+    MX_GPIO_Init();
+    MX_DAC_Init();
+    MX_TIM6_Init();
+    MX_USART2_UART_Init();
 
-  // Запуск ЦАП
-  HAL_DAC_Start(&hdac, DAC_CHANNEL_1);
+    /* USER CODE BEGIN 2 */
+    // Start UART reception in interrupt mode
+    HAL_UART_Receive_IT(&huart2, (uint8_t *)&uart_rx_data, 1);
 
-  // Инициализация массива sine_wave
-  for(int i = 0; i < SAMPLES; i++)
-  {
-      sine_wave[i] = (sinf(2 * M_PI * i / SAMPLES) * amplitude_scale + 1) / 2;
-  }
-
-  // Начало приема данных по UART
-  HAL_UART_Receive_IT(&huart2, &rx_byte, buf_size);
-  /* USER CODE END 2 */
-
-  while (1)
-  {
-    /* USER CODE BEGIN WHILE */
-    // Основной цикл ничего не делает, вся обработка происходит в прерываниях
-    /* USER CODE END WHILE */
-  }
-}
-
-/* USER CODE BEGIN 4 */
-// Обработчик прерывания по завершению приема данных UART
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-{
-    if(huart->Instance == USART2)
-    {
-        if(rx_byte != '\n' && rx_index < sizeof(rx_buffer) - 1)
-        {
-            rx_buffer[rx_index++] = rx_byte;
-        }
-        else
-        {
-            rx_buffer[rx_index] = '\0';
-            // Обработка полученного сообщения
-            HAL_UART_Transmit(&huart2, (uint8_t*)rx_buffer, strlen(rx_buffer), HAL_MAX_DELAY);
-            ParseUARTMessage(rx_buffer);
-            // Сброс индекса
-            rx_index = 0;
-        }
-
-        // Перезапуск приема данных по UART
-        HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
-    }
-}
-
-// Функция разбора входящего сообщения
-void ParseUARTMessage(char* message)
-{
-    float new_amplitude_scale = 0.0f;
-    float new_frequency = 0.0f;
-
-    // Удаление символов переноса строки и возврата каретки из message
-    char *newline_pos = strchr(message, '\n');
-    if (newline_pos) *newline_pos = '\0';
-    newline_pos = strchr(message, '\r');
-    if (newline_pos) *newline_pos = '\0';
-
-    // Отладочный вывод очищенного сообщения
-    char clean_message[50];
-    sprintf(clean_message, "Cleaned message: %s\r\n", message);
-    HAL_UART_Transmit(&huart2, (uint8_t*)clean_message, strlen(clean_message), HAL_MAX_DELAY);
-
-    // Поиск подстрок "A=" и "F=" в сообщении
-    char *amp_str = strstr(message, "A=");
-    char *freq_str = strstr(message, "F=");
-
-    // Проверка, что обе подстроки найдены
-    if (amp_str != NULL && freq_str != NULL)
-    {
-        // Парсинг амплитуды и частоты
-        new_amplitude_scale = atof(amp_str + 2); // +2 для пропуска "A="
-        new_frequency = atof(freq_str + 2);      // +2 для пропуска "F="
-
-        // Проверка корректности значений
-        if (new_amplitude_scale > 0 && new_frequency > 0)
-        {
-            // Обновление амплитуды и частоты
-            amplitude_scale = new_amplitude_scale;
-            frequency = new_frequency;
-
-            // Обновление массива sine_wave
-            __disable_irq(); // Отключение прерываний
-            for(int i = 0; i < SAMPLES; i++)
-            {
-                sine_wave[i] = (sinf(2 * M_PI * i / SAMPLES) * amplitude_scale + 1) / 2;
-            }
-            __enable_irq(); // Включение прерываний
-
-            // Обновление настроек таймера
-            UpdateTimerFrequency();
-
-            // Отправка подтверждения по UART
-            char ack_message[50];
-            sprintf(ack_message, "Amplitude: %.3f, Frequency: %.3f Hz\r\n", amplitude_scale, frequency);
-            HAL_UART_Transmit(&huart2, (uint8_t*)ack_message, strlen(ack_message), HAL_MAX_DELAY);
-        }
-        else
-        {
-            // Ошибка: неподходящие значения амплитуды или частоты
-            char error_message[] = "Error: Amplitude and Frequency must be > 0\n";
-            HAL_UART_Transmit(&huart2, (uint8_t*)error_message, strlen(error_message), HAL_MAX_DELAY);
-        }
-    }
-    else
-    {
-        // Ошибка парсинга: формат сообщения неверен
-        char error_message[] = "Invalid format. Use A=amp,F=freq\n";
-        HAL_UART_Transmit(&huart2, (uint8_t*)error_message, strlen(error_message), HAL_MAX_DELAY);
-    }
-
-    // Отладочная печать
-    char debug_message[50];
-    sprintf(debug_message, "Amplitude set to: %.3f, Frequency set to: %.3f\r\n", amplitude_scale, frequency);
-    HAL_UART_Transmit(&huart2, (uint8_t*)debug_message, strlen(debug_message), HAL_MAX_DELAY);
-}
-// Функция обновления настроек таймера для изменения частоты
-void UpdateTimerFrequency()
-{
-    // Желательная частота прерываний таймера = частота * количество_samples
-    uint32_t desired_timer_freq = frequency * SAMPLES;
-
-    // Получение частоты таймера
-    uint32_t timer_clock = HAL_RCC_GetPCLK1Freq() * 2; // Умножаем на 2 для корректной частоты таймера (если используется APB1)
-
-    // Вычисление предделителя и периода
-    uint32_t prescaler = (timer_clock / desired_timer_freq / 65536) + 1;
-    if(prescaler > 0xFFFF) prescaler = 0xFFFF;
-
-    uint32_t period = (timer_clock / (prescaler * desired_timer_freq)) - 1;
-    if(period > 0xFFFF) period = 0xFFFF;
-
-    // Остановка таймера
-    HAL_TIM_Base_Stop_IT(&htim6);
-
-    // Обновление настроек таймера
-    htim6.Init.Prescaler = prescaler - 1;
-    htim6.Init.Period = period;
-
-    if(HAL_TIM_Base_Init(&htim6) != HAL_OK)
-    {
-        Error_Handler();
-    }
-
-    // Запуск таймера
+    // Start timer in interrupt mode
     HAL_TIM_Base_Start_IT(&htim6);
-}
 
-// Обработчик прерывания таймера
+    // Start DAC
+    HAL_DAC_Start(&hdac, DAC_CHANNEL_1);
+
+    // Calculate phase increment
+    phase_increment = (freq * SAMPLES) / TIMER_FREQUENCY;
+
+    // Generate sine_wave[] array
+    for(int i = 0; i < SAMPLES; i++)
+    {
+        sine_wave[i] = (sinf(2 * M_PI * i / SAMPLES) * m * amp + 1) / 2;
+    }
+    /* USER CODE END 2 */
+
+    /* Infinite loop */
+    while (1)
+    {
+        /* USER CODE BEGIN WHILE */
+        if (command_ready)
+        {
+            command_ready = 0;
+            Process_UART_Command((char*)uart_rx_buffer);
+        }
+        /* USER CODE END WHILE */
+    }
+}
+/* Timer interrupt handler for DAC output */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
     if(htim->Instance == TIM6)
     {
-        // Преобразование значения из массива в значение для ЦАП
-        uint32_t dac_value = (uint32_t)(sine_wave[sample_index] * 4095); // Диапазон 0-4095
+        phase += phase_increment;
+        if(phase >= SAMPLES)
+            phase -= SAMPLES;
 
-        // Установка значения на ЦАП
+        uint32_t sample_index = (uint32_t)phase;
+        uint32_t dac_value = (uint32_t)(sine_wave[sample_index] * 4095);
         HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, dac_value);
-
-        // Увеличение индекса и проверка на переполнение
-        sample_index++;
-        if(sample_index >= SAMPLES)
-        {
-            sample_index = 0;
-        }
     }
 }
-/* USER CODE END 4 */
 
-/* Функции инициализации периферии */
 
+/* UART receive interrupt handler */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if(huart->Instance == USART2)
+    {
+        if(uart_rx_data != '\r' && uart_rx_data != '\n' && uart_rx_index < UART_BUFFER_SIZE - 1)
+        {
+            uart_rx_buffer[uart_rx_index++] = uart_rx_data;
+        }
+        else if (uart_rx_index > 0) // If command has content
+        {
+            uart_rx_buffer[uart_rx_index] = '\0'; // Null-terminate the string
+            command_ready = 1; // Set flag to process command in main loop
+            uart_rx_index = 0;
+        }
+        // If uart_rx_data is '\r' or '\n' and uart_rx_index == 0, ignore it
+
+        // Restart UART reception
+        HAL_UART_Receive_IT(&huart2, (uint8_t *)&uart_rx_data, 1);
+    }
+}
+
+void Process_UART_Command(char* command)
+{
+    if(strncmp(command, "FREQ ", 5) == 0)
+    {
+        float new_freq = atof(&command[5]);
+        if(new_freq > 0 && new_freq <= MAX_FREQ)
+        {
+            freq = new_freq;
+            phase_increment = (freq * SAMPLES) / TIMER_FREQUENCY;
+            // Send back confirmation
+            char msg[32];
+            snprintf(msg, sizeof(msg), "Frequency set to %.2f Hz\r\n", freq);
+            HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+        }
+        else
+        {
+            char msg[] = "Invalid frequency\r\n";
+            HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+        }
+    }
+    else if(strncmp(command, "AMP ", 4) == 0)
+    {
+        float new_amp = atof(&command[4]);
+        if(new_amp >= 0.0f && new_amp <= 6.5f)
+        {
+            amp = new_amp;
+            // Regenerate sine_wave[]
+            for(int i = 0; i < SAMPLES; i++)
+            {
+                sine_wave[i] = (sinf(2 * M_PI * i / SAMPLES) * amp * m + 1) / 2;
+            }
+            // Send back confirmation
+            char msg[32];
+            snprintf(msg, sizeof(msg), "Amplitude set to %.2f\r\n", amp);
+            HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+        }
+        else
+        {
+            char msg[] = "Invalid amplitude\r\n";
+            HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+        }
+    }
+    else
+    {
+        // Unknown command
+        char msg[] = "Unknown command\r\n";
+        HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+    }
+}
+
+/**
+  * @brief System Clock Configuration
+  * @retval None
+  */
 void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
-  /** Инициализация напряжения основного внутреннего регулятора */
+  /** Configure the main internal regulator output voltage
+  */
   __HAL_RCC_PWR_CLK_ENABLE();
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
 
-  /** Инициализация RCC Осцилляторов */
+  /** Initializes the RCC Oscillators according to the specified parameters
+  * in the RCC_OscInitTypeDef structure.
+  */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
@@ -269,13 +216,14 @@ void SystemClock_Config(void)
     Error_Handler();
   }
 
-  /** Инициализация тактирования CPU, AHB и APB шин */
+  /** Initializes the CPU, AHB and APB buses clocks
+  */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4; // Обратите внимание на делитель
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2; // Обратите внимание на делитель
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
   {
@@ -283,31 +231,63 @@ void SystemClock_Config(void)
   }
 }
 
+/**
+  * @brief DAC Initialization Function
+  * @param None
+  * @retval None
+  */
 static void MX_DAC_Init(void)
 {
+
+  /* USER CODE BEGIN DAC_Init 0 */
+
+  /* USER CODE END DAC_Init 0 */
+
   DAC_ChannelConfTypeDef sConfig = {0};
 
-  /** Инициализация DAC */
+  /* USER CODE BEGIN DAC_Init 1 */
+
+  /* USER CODE END DAC_Init 1 */
+
+  /** DAC Initialization
+  */
   hdac.Instance = DAC;
   if (HAL_DAC_Init(&hdac) != HAL_OK)
   {
     Error_Handler();
   }
 
-  /** Настройка канала DAC OUT1 */
+  /** DAC channel OUT1 config
+  */
   sConfig.DAC_Trigger = DAC_TRIGGER_NONE;
   sConfig.DAC_OutputBuffer = DAC_OUTPUTBUFFER_ENABLE;
   if (HAL_DAC_ConfigChannel(&hdac, &sConfig, DAC_CHANNEL_1) != HAL_OK)
   {
     Error_Handler();
   }
+  /* USER CODE BEGIN DAC_Init 2 */
+
+  /* USER CODE END DAC_Init 2 */
+
 }
 
+/**
+  * @brief TIM6 Initialization Function
+  * @param None
+  * @retval None
+  */
 static void MX_TIM6_Init(void)
 {
+
+  /* USER CODE BEGIN TIM6_Init 0 */
+
+  /* USER CODE END TIM6_Init 0 */
+
   TIM_MasterConfigTypeDef sMasterConfig = {0};
 
-  /** Инициализация TIM6 */
+  /* USER CODE BEGIN TIM6_Init 1 */
+
+  /* USER CODE END TIM6_Init 1 */
   htim6.Instance = TIM6;
   htim6.Init.Prescaler = 39;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
@@ -323,11 +303,27 @@ static void MX_TIM6_Init(void)
   {
     Error_Handler();
   }
+  /* USER CODE BEGIN TIM6_Init 2 */
+
+  /* USER CODE END TIM6_Init 2 */
+
 }
 
+/**
+  * @brief USART2 Initialization Function
+  * @param None
+  * @retval None
+  */
 static void MX_USART2_UART_Init(void)
 {
-  /** Инициализация UART2 */
+
+  /* USER CODE BEGIN USART2_Init 0 */
+
+  /* USER CODE END USART2_Init 0 */
+
+  /* USER CODE BEGIN USART2_Init 1 */
+
+  /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
   huart2.Init.BaudRate = 9600;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
@@ -340,38 +336,59 @@ static void MX_USART2_UART_Init(void)
   {
     Error_Handler();
   }
-}
+  /* USER CODE BEGIN USART2_Init 2 */
 
-static void MX_GPIO_Init(void)
-{
-  /* Включение тактирования GPIO портов */
-  __HAL_RCC_GPIOC_CLK_ENABLE();
-  __HAL_RCC_GPIOH_CLK_ENABLE();
-  __HAL_RCC_GPIOA_CLK_ENABLE();
+  /* USER CODE END USART2_Init 2 */
+
 }
 
 /**
-  * @brief  Функция обработки ошибок.
+  * @brief GPIO Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_GPIO_Init(void)
+{
+
+  /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOH_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+
+}
+
+/* USER CODE BEGIN 4 */
+
+/* USER CODE END 4 */
+
+/**
+  * @brief  This function is executed in case of error occurrence.
   * @retval None
   */
 void Error_Handler(void)
 {
-  /* Пользователь может добавить свою реализацию для обработки ошибок */
+  /* USER CODE BEGIN Error_Handler_Debug */
+  /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
   while (1)
   {
   }
+  /* USER CODE END Error_Handler_Debug */
 }
 
 #ifdef  USE_FULL_ASSERT
 /**
-  * @brief  Сообщает имя файла и номер строки, где произошла ошибка assert_param.
-  * @param  file: указатель на имя файла исходного кода
-  * @param  line: номер строки, где произошла ошибка
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
   * @retval None
   */
 void assert_failed(uint8_t *file, uint32_t line)
 {
-  /* Пользователь может добавить свою реализацию для сообщения об ошибке */
+  /* USER CODE BEGIN 6 */
+  /* User can add his own implementation to report the file name and line number,
+     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
