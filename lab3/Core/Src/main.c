@@ -80,7 +80,7 @@ int main(void)
     // Generate sine_wave[] array
     for(int i = 0; i < SAMPLES; i++)
     {
-        sine_wave[i] = (sinf(2 * M_PI * i / SAMPLES) * m * amp + 1) / 2;
+        sine_wave[i] = (sinf(2 * M_PI * i / SAMPLES) * amp + 1) / 2;
     }
     /* USER CODE END 2 */
 
@@ -163,7 +163,7 @@ void Process_UART_Command(char* command)
             // Regenerate sine_wave[]
             for(int i = 0; i < SAMPLES; i++)
             {
-                sine_wave[i] = (sinf(2 * M_PI * i / SAMPLES) * amp * m + 1) / 2;
+                sine_wave[i] = (sinf(2 * M_PI * i / SAMPLES) * amp + 1) / 2;
             }
             // Send back confirmation
             char msg[32];
