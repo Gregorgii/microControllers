@@ -26,7 +26,7 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
- ADC_HandleTypeDef hadc1;
+ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
 
 DAC_HandleTypeDef hdac;
@@ -43,9 +43,9 @@ uint32_t adc_buffer[ADC_BUFFER_SIZE];
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_DAC_Init(void);
-static void MX_DMA_Init(void);
 static void MX_TIM6_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
@@ -56,7 +56,7 @@ static void MX_USART2_UART_Init(void);
 void generate_sine_wave() {
     // Генерация синусоиды с заданной амплитудой и частотой
     float angle = 2 * 3.14 * SIN_FREQ * t / 1000; // f = 20 Гц, t в мс
-    float sine_value = SIN_OFFSET + (SIN_AMPLITUDE / 2) * (1 + sinf(angle));
+    float sine_value = SIN_OFFSET + (SIN_AMPLITUDE / 2) * sinf(angle);
     uint32_t dac_value = (uint32_t)((sine_value * DAC_RESOLUTION) / V_REF);
     HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, dac_value);
 }
@@ -73,13 +73,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 
 void transmit_data() {
     uint16_t adc_value_mv = (adc_buffer[0] * V_REF) / DAC_RESOLUTION; // Перевод значения в мВ
-    uint8_t data[4];
+    uint8_t data[3];
     data[0] = (adc_value_mv >> 8) & 0xFF; // старший байт
     data[1] = adc_value_mv & 0xFF;        // младший байт
-    data[2] = 0xAA; // Начало пакета
-    data[3] = 0xBB; // Конец пакета
+    data[2] = 0xBB; // Конец пакета
 
-    HAL_UART_Transmit(&huart2, data, 4, HAL_MAX_DELAY);
+    HAL_UART_Transmit(&huart2, data, 3, HAL_MAX_DELAY);
 }
 
 /* USER CODE END 0 */
@@ -90,6 +89,7 @@ void transmit_data() {
   */
 int main(void)
 {
+
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
@@ -112,9 +112,9 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_ADC1_Init();
   MX_DAC_Init();
-  MX_DMA_Init();
   MX_TIM6_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
@@ -147,6 +147,7 @@ void SystemClock_Config(void)
   */
   __HAL_RCC_PWR_CLK_ENABLE();
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
@@ -365,12 +366,16 @@ static void MX_DMA_Init(void)
   */
 static void MX_GPIO_Init(void)
 {
+/* USER CODE BEGIN MX_GPIO_Init_1 */
+/* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
+  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
+/* USER CODE BEGIN MX_GPIO_Init_2 */
+/* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */
