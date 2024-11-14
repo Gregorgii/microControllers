@@ -5,11 +5,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <math.h> // Подключение math.h для использования sinf
 /* USER CODE END Includes */
-
-/* Private typedef -----------------------------------------------------------*/
-/* USER CODE BEGIN PTD */
-/* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
@@ -21,117 +18,77 @@
 #define SIN_OFFSET 1650 // Смещение в мВ
 /* USER CODE END PD */
 
-/* Private macro -------------------------------------------------------------*/
-/* USER CODE BEGIN PM */
-/* USER CODE END PM */
-
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
-
 DAC_HandleTypeDef hdac;
-
 TIM_HandleTypeDef htim6;
-
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-volatile uint32_t t = 0;
+volatile uint32_t t = 0; // Счетчик времени в миллисекундах
 uint32_t adc_buffer[ADC_BUFFER_SIZE];
 /* USER CODE END PV */
 
-/* Private function prototypes -----------------------------------------------*/
-void SystemClock_Config(void);
-static void MX_GPIO_Init(void);
-static void MX_DMA_Init(void);
-static void MX_ADC1_Init(void);
-static void MX_DAC_Init(void);
-static void MX_TIM6_Init(void);
-static void MX_USART2_UART_Init(void);
-/* USER CODE BEGIN PFP */
-/* USER CODE END PFP */
-
-/* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 void generate_sine_wave() {
     // Генерация синусоиды с заданной амплитудой и частотой
-    float angle = 2 * 3.14 * SIN_FREQ * t / 1000; // f = 20 Гц, t в мс
-    float sine_value = SIN_OFFSET + (SIN_AMPLITUDE / 2) * sinf(angle);
-    uint32_t dac_value = (uint32_t)((sine_value * DAC_RESOLUTION) / V_REF);
+    float angle = 2.0f * 3.14159f * SIN_FREQ * t / 1000.0f; // Частота 20 Гц, время t в миллисекундах
+    float sine_value_mv = SIN_OFFSET + SIN_AMPLITUDE * sinf(angle); // Значение синусоиды в мВ
+
+    // Преобразование в значение для DAC (12-битное разрешение)
+    uint32_t dac_value = (uint32_t)((sine_value_mv * DAC_RESOLUTION) / V_REF);
+
+    // Установка значения на DAC
     HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, dac_value);
 }
 
 /* Обработка прерывания таймера */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
     if (htim->Instance == TIM6) {
-        t++;
+        t++; // Увеличиваем счетчик времени в миллисекундах
         generate_sine_wave();
+
+        // Старт ADC и получение данных через DMA
         HAL_ADC_Start_DMA(&hadc1, adc_buffer, ADC_BUFFER_SIZE);
+
+        // Передача данных
         transmit_data();
     }
 }
 
 void transmit_data() {
-    uint16_t adc_value_mv = (adc_buffer[0] * V_REF) / DAC_RESOLUTION; // Перевод значения в мВ
+    // Преобразование значения ADC в мВ
+    uint16_t adc_value_mv = (adc_buffer[0] * V_REF) / DAC_RESOLUTION;
+
+    // Формирование пакета данных для передачи
     uint8_t data[3];
     data[0] = (adc_value_mv >> 8) & 0xFF; // старший байт
     data[1] = adc_value_mv & 0xFF;        // младший байт
     data[2] = 0xBB; // Конец пакета
 
+    // Передача данных по UART
     HAL_UART_Transmit(&huart2, data, 3, HAL_MAX_DELAY);
 }
-
 /* USER CODE END 0 */
 
-/**
-  * @brief  The application entry point.
-  * @retval int
-  */
-int main(void)
-{
+int main(void) {
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+    MX_DMA_Init();
+    MX_ADC1_Init();
+    MX_DAC_Init();
+    MX_TIM6_Init();
+    MX_USART2_UART_Init();
 
-  /* USER CODE BEGIN 1 */
+    /* Запуск DAC и таймера с прерываниями */
+    HAL_DAC_Start(&hdac, DAC_CHANNEL_1);
+    HAL_TIM_Base_Start_IT(&htim6);
 
-  /* USER CODE END 1 */
-
-  /* MCU Configuration--------------------------------------------------------*/
-
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
-
-  /* USER CODE BEGIN Init */
-
-  /* USER CODE END Init */
-
-  /* Configure the system clock */
-  SystemClock_Config();
-
-  /* USER CODE BEGIN SysInit */
-
-  /* USER CODE END SysInit */
-
-  /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  MX_DMA_Init();
-  MX_ADC1_Init();
-  MX_DAC_Init();
-  MX_TIM6_Init();
-  MX_USART2_UART_Init();
-  /* USER CODE BEGIN 2 */
-  // Запуск DAC и Timer с прерываниями
-  HAL_DAC_Start(&hdac, DAC_CHANNEL_1);
-  HAL_TIM_Base_Start_IT(&htim6);
-  /* USER CODE END 2 */
-
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-    /* USER CODE END WHILE */
-
-    /* USER CODE BEGIN 3 */
-  }
-  /* USER CODE END 3 */
+    /* Бесконечный цикл */
+    while (1) {
+    }
 }
 
 /**
