@@ -75,7 +75,7 @@ typedef struct {
     float integral;
 } PID_Controller;
 
-PID_Controller pid = {0.8, 0, 0.01, 0, 0}; // Настройки PID
+PID_Controller pid = {0.8, 0, 0.5, 0, 0}; // Настройки PID
 uint16_t buff[4] = { };
 uint16_t data[2] = { };
 
@@ -93,6 +93,9 @@ void send_telemetry() {
 
 float calculate_pid(PID_Controller *pid, float setpoint, float measured) {
     float error = setpoint - measured;
+    if (buff[2]/100 < 3){
+    	error = 0;
+    }
     pid->integral += error;
     float derivative = error - pid->previous_error;
     pid->previous_error = error;
@@ -108,11 +111,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
         aim = data[0];
 
         control = (int16_t)calculate_pid(&pid, aim, pos);
-
-        if (control > 900)
-            control = 900;
-        if (control < -900)
-            control = -900;
 
         if (control > 0) {
             HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
